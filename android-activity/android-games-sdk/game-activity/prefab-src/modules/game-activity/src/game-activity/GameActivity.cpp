@@ -39,6 +39,7 @@
 #include <mutex>
 #include <string>
 #include <vector>
+#include <text_input_state.h>
 
 #include "GameActivityEvents_internal.h"
 
@@ -46,16 +47,7 @@ namespace {
 
 static std::atomic<bool> g_methodsRegistered(false);
 
-struct OwnedGameTextInputState {
-    OwnedGameTextInputState& operator=(const GameTextInputState& rhs) {
-        inner = rhs;
-        owned_string = std::string(rhs.text_UTF8, rhs.text_length);
-        inner.text_UTF8 = owned_string.data();
-        return *this;
-    }
-    GameTextInputState inner;
-    std::string owned_string;
-};
+
 
 } // anonymous namespace
 
@@ -317,7 +309,11 @@ struct NativeCode : public GameActivity {
     GameTextInput* gameTextInput;
     // Set by users in GameActivity_setTextInputState, then passed to
     // GameTextInput.
-    OwnedGameTextInputState gameTextInputState;
+    struct ImeState {
+        OwnedGameTextInputState text;
+        GameActivityImeEditorInfo editorInfo = {};
+        bool hasEditorInfo = false;
+    } gameTextInputState;
     std::mutex gameTextInputStateMutex;
 
     ARect insetsState[GAMECOMMON_INSETS_TYPE_COUNT];
@@ -351,7 +347,17 @@ extern "C" void GameActivity_setTextInputState(GameActivity* activity,
                                                const GameTextInputState* state) {
     NativeCode* code = static_cast<NativeCode*>(activity);
     std::lock_guard<std::mutex> lock(code->gameTextInputStateMutex);
-    code->gameTextInputState = *state;
+    code->gameTextInputState.text = *state;
+    write_work(code->mainWorkWrite, CMD_SET_SOFT_INPUT_STATE);
+}
+
+extern "C" void GameActivity_setImeState(GameActivity* activity, const GameTextInputState* state,
+                                         const GameActivityImeEditorInfo* info) {
+    NativeCode* code = static_cast<NativeCode*>(activity);
+    std::lock_guard<std::mutex> lock(code->gameTextInputStateMutex);
+    code->gameTextInputState.text = *state;
+    code->gameTextInputState.editorInfo = *info;
+    code->gameTextInputState.hasEditorInfo = true;
     write_work(code->mainWorkWrite, CMD_SET_SOFT_INPUT_STATE);
 }
 
@@ -424,8 +430,20 @@ static int mainWorkCallback(int fd, int events, void* data) {
             GameTextInput_showIme(code->gameTextInput, work.arg1);
         } break;
         case CMD_SET_SOFT_INPUT_STATE: {
-            std::lock_guard<std::mutex> lock(code->gameTextInputStateMutex);
-            GameTextInput_setState(code->gameTextInput, &code->gameTextInputState.inner);
+            NativeCode::ImeState snapshot;
+            {
+                std::lock_guard<std::mutex> lock(code->gameTextInputStateMutex);
+                snapshot = code->gameTextInputState;
+                code->gameTextInputState.hasEditorInfo = false;
+            }
+            if (snapshot.hasEditorInfo) {
+                const auto& info = snapshot.editorInfo;
+                code->env->CallVoidMethod(code->javaGameActivity,
+                    gGameActivityClassInfo.setImeEditorInfoFields,
+                    info.inputType, info.actionId, info.imeOptions);
+            }
+            const auto state = snapshot.text.view();
+            GameTextInput_setState(code->gameTextInput, &state);
             checkAndClearException(code->env, "setTextInputState");
         } break;
         case CMD_HIDE_SOFT_INPUT: {

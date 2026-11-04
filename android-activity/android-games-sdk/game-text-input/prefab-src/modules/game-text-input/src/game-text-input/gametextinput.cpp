@@ -23,7 +23,7 @@
 #include <algorithm>
 #include <memory>
 #include <mutex>
-#include <vector>
+#include <text_input_state.h>
 
 #define LOG_TAG "GameTextInput"
 
@@ -44,7 +44,7 @@ public:
     GameTextInput(JNIEnv* env, uint32_t max_string_size);
     ~GameTextInput();
     void setState(const GameTextInputState& state);
-    GameTextInputState getState() const {
+    OwnedGameTextInputState getState() const {
         std::lock_guard<std::mutex> lock(currentStateMutex_);
         return currentState_;
     }
@@ -65,14 +65,15 @@ public:
 
 private:
     // Copy string and set other fields
-    void setStateInner(const GameTextInputState& state);
+    void setStateInner(const GameTextInputState& state, bool from_java = false);
     static void processCallback(void* context, const GameTextInputState* state);
     JNIEnv* env_ = nullptr;
     // Cached at initialization from
     // com/google/androidgamesdk/gametextinput/State.
     jclass stateJavaClass_ = nullptr;
     // The latest text input update.
-    GameTextInputState currentState_ = {};
+    OwnedGameTextInputState currentState_;
+    bool settingState_ = false;
     // A mutex to protect currentState_.
     mutable std::mutex currentStateMutex_;
     // An instance of gametextinput.InputConnection.
@@ -87,8 +88,6 @@ private:
     ARect currentInsets_ = {};
     void* insetsCallbackContext_ = nullptr;
     StateClassInfo stateClassInfo_ = {};
-    // Constant-sized buffer used to store state text.
-    std::vector<char> stateStringBuffer_;
 };
 
 std::unique_ptr<GameTextInput> s_gameTextInput;
@@ -139,7 +138,8 @@ void GameTextInput_setState(GameTextInput* input, const GameTextInputState* stat
 
 void GameTextInput_getState(GameTextInput* input, GameTextInputGetStateCallback callback,
                             void* context) {
-    GameTextInputState state = input->getState();
+    const auto snapshot = input->getState();
+    const auto state = snapshot.view();
     callback(context, &state);
 }
 
@@ -188,8 +188,8 @@ void GameTextInput_getImeInsets(const GameTextInput* input, ARect* insets) {
 ///////////////////////////////////////////////////////////
 
 GameTextInput::GameTextInput(JNIEnv* env, uint32_t max_string_size)
-      : env_(env),
-        stateStringBuffer_(max_string_size == 0 ? DEFAULT_MAX_STRING_SIZE : max_string_size) {
+      : env_(env) {
+    currentState_.text.reserve(max_string_size == 0 ? DEFAULT_MAX_STRING_SIZE : max_string_size);
     stateJavaClass_ = (jclass)env_->NewGlobalRef(
             env_->FindClass("com/google/androidgamesdk/gametextinput/State"));
     inputConnectionClass_ = (jclass)env_->NewGlobalRef(
@@ -226,31 +226,23 @@ GameTextInput::~GameTextInput() {
 }
 
 void GameTextInput::setState(const GameTextInputState& state) {
-    if (inputConnection_ == nullptr) return;
-    jobject jstate = stateToJava(state);
-    env_->CallVoidMethod(inputConnection_, inputConnectionSetStateMethod_, jstate);
-    env_->DeleteLocalRef(jstate);
-    setStateInner(state);
+    settingState_ = true;
+    if (inputConnection_ != nullptr) {
+        jobject jstate = stateToJava(state);
+        env_->CallVoidMethod(inputConnection_, inputConnectionSetStateMethod_, jstate);
+        env_->DeleteLocalRef(jstate);
+    }
+    if (!env_->ExceptionCheck()) {
+        setStateInner(state);
+    }
+    settingState_ = false;
 }
 
-void GameTextInput::setStateInner(const GameTextInputState& state) {
+void GameTextInput::setStateInner(const GameTextInputState& state, bool from_java) {
     std::lock_guard<std::mutex> lock(currentStateMutex_);
-
-    // Check if we're setting using our own string (other parts may be
-    // different)
-    if (state.text_UTF8 == currentState_.text_UTF8) {
-        currentState_ = state;
-        return;
-    }
-    // Otherwise, copy across the string.
-    auto bytes_needed = std::min(static_cast<uint32_t>(state.text_length + 1),
-                                 static_cast<uint32_t>(stateStringBuffer_.size()));
-    currentState_.text_UTF8 = stateStringBuffer_.data();
-    std::copy(state.text_UTF8, state.text_UTF8 + bytes_needed - 1, stateStringBuffer_.data());
-    currentState_.text_length = state.text_length;
-    currentState_.selection = state.selection;
-    currentState_.composingRegion = state.composingRegion;
-    stateStringBuffer_[bytes_needed - 1] = 0;
+    const auto context = currentState_.context_id;
+    currentState_ = state;
+    if (from_java) currentState_.context_id = context;
 }
 
 void GameTextInput::setInputConnection(jobject inputConnection) {
@@ -258,18 +250,24 @@ void GameTextInput::setInputConnection(jobject inputConnection) {
         env_->DeleteGlobalRef(inputConnection_);
     }
     inputConnection_ = env_->NewGlobalRef(inputConnection);
+    if (inputConnection_ != nullptr) {
+        const auto snapshot = getState();
+        setState(snapshot.view());
+    }
 }
 
 /*static*/ void GameTextInput::processCallback(void* context, const GameTextInputState* state) {
     auto thiz = static_cast<GameTextInput*>(context);
-    if (state != nullptr) thiz->setStateInner(*state);
+    if (state != nullptr) thiz->setStateInner(*state, true);
 }
 
 void GameTextInput::processEvent(jobject textInputEvent) {
+    if (settingState_) return;
     stateFromJava(textInputEvent, processCallback, this);
     if (eventCallback_) {
-        std::lock_guard<std::mutex> lock(currentStateMutex_);
-        eventCallback_(eventCallbackContext_, &currentState_);
+        const auto snapshot = getState();
+        const auto state = snapshot.view();
+        eventCallback_(eventCallbackContext_, &state);
     }
 }
 
@@ -349,7 +347,7 @@ void GameTextInput::stateFromJava(jobject textInputEvent, GameTextInputGetStateC
     GameTextInputState state{text_chars,
                              text_len,
                              {selectionStart, selectionEnd},
-                             {composingRegionStart, composingRegionEnd}};
+                             {composingRegionStart, composingRegionEnd}, 0};
     callback(context, &state);
     env_->ReleaseStringUTFChars(text, text_chars);
     env_->DeleteLocalRef(text);

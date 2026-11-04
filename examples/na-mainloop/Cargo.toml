@@ -15,7 +15,7 @@ tracing-subscriber = { version = "0.3", features = [
 paranoid-android = "0.2"
 tracing-log = "0.2"
 
-android-activity = { path = "../../android-activity", features = [
+android-activity = { package = "tessera-android-activity", path = "../../android-activity", features = [
     "native-activity",
 ] }
 jni = "0.22"

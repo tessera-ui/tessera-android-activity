@@ -29,7 +29,7 @@ pub enum InputEvent<'a> {
     MotionEvent(MotionEvent<'a>),
     KeyEvent(KeyEvent<'a>),
     TextEvent(crate::input::TextInputState),
-    TextAction(crate::input::TextInputAction),
+    TextAction(crate::input::TextInputAction, u64),
 }
 
 /// A motion event.

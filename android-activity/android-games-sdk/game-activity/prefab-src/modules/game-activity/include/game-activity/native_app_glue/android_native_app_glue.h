@@ -306,6 +306,7 @@ struct android_app {
     // NB: both of these should only be read with the app mutex held
     bool inputAvailableWakeUp;
     bool inputSwapPending;
+    uint64_t editorActionContext;
 
     /** @endcond */
 };

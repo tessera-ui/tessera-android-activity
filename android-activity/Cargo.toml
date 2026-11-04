@@ -1,17 +1,20 @@
 [package]
-name = "android-activity"
+name = "tessera-android-activity"
 version = "0.6.1"
 edition = "2021"
 keywords = ["android", "ndk"]
 readme = "../README.md"
-homepage = "https://github.com/rust-mobile/android-activity"
-repository = "https://github.com/rust-mobile/android-activity"
-documentation = "https://docs.rs/android-activity"
+homepage = "https://github.com/tessera-ui/tessera-android-activity"
+repository = "https://github.com/tessera-ui/tessera-android-activity"
+documentation = "https://docs.rs/tessera-android-activity"
 description = "Glue for building Rust applications on Android with NativeActivity or GameActivity"
 license = "MIT OR Apache-2.0"
 include = ["/build.rs", "/android-games-sdk", "/LICENSE*", "/src"]
 
 rust-version = "1.85.0"
+
+[lib]
+name = "android_activity"
 
 [features]
 # Note: we don't enable any backend by default since features

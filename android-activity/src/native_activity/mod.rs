@@ -434,6 +434,7 @@ impl AndroidAppInner {
     // TODO: move into a trait
     pub fn text_input_state(&self) -> TextInputState {
         TextInputState {
+            context_id: 0,
             text: String::new(),
             selection: TextSpan { start: 0, end: 0 },
             compose_region: None,

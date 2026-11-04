@@ -82,6 +82,8 @@ typedef struct GameTextInputState {
      * A composing region defined on the text.
      */
     GameTextInputSpan composingRegion;
+    /** Identifies the editor that owns this text. */
+    uint64_t context_id;
 } GameTextInputState;
 
 /**
@@ -104,9 +106,8 @@ typedef struct GameTextInput GameTextInput;
  * will be returned and a warning will be issued.
  * @param env A JNI env valid on the calling thread. All other calls to the resulting GameTextInput
  * object must be done on the same calling thread.
- * @param max_string_size The maximum length of a string that can be edited. If
- * zero, the maximum defaults to 65536 bytes. A buffer of this size is allocated
- * at initialization.
+ * @param max_string_size Initial text-buffer capacity; zero reserves 65536 bytes.
+ * Text may grow beyond this capacity.
  * @return A handle to the library.
  */
 GameTextInput* GameTextInput_init(JNIEnv* env, uint32_t max_string_size);

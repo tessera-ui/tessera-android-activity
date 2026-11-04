@@ -2396,11 +2396,13 @@ pub struct GameTextInputState {
     pub selection: GameTextInputSpan,
     #[doc = " A composing region defined on the text."]
     pub composingRegion: GameTextInputSpan,
+    #[doc = " Identifies the editor that owns this text."]
+    pub context_id: u64,
 }
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
 const _: () = {
-    ["Size of GameTextInputState"][::std::mem::size_of::<GameTextInputState>() - 24usize];
-    ["Alignment of GameTextInputState"][::std::mem::align_of::<GameTextInputState>() - 4usize];
+    ["Size of GameTextInputState"][::std::mem::size_of::<GameTextInputState>() - 32usize];
+    ["Alignment of GameTextInputState"][::std::mem::align_of::<GameTextInputState>() - 8usize];
     ["Offset of field: GameTextInputState::text_UTF8"]
         [::std::mem::offset_of!(GameTextInputState, text_UTF8) - 0usize];
     ["Offset of field: GameTextInputState::text_length"]
@@ -2409,6 +2411,8 @@ const _: () = {
         [::std::mem::offset_of!(GameTextInputState, selection) - 8usize];
     ["Offset of field: GameTextInputState::composingRegion"]
         [::std::mem::offset_of!(GameTextInputState, composingRegion) - 16usize];
+    ["Offset of field: GameTextInputState::context_id"]
+        [::std::mem::offset_of!(GameTextInputState, context_id) - 24usize];
 };
 #[doc = " A callback called by GameTextInput_getState.\n @param context User-defined context.\n @param state State, owned by the library, that will be valid for the duration\n of the callback."]
 pub type GameTextInputGetStateCallback = ::std::option::Option<
@@ -5125,10 +5129,11 @@ pub struct android_app {
     pub motionEventFilter: android_motion_event_filter,
     pub inputAvailableWakeUp: bool,
     pub inputSwapPending: bool,
+    pub editorActionContext: u64,
 }
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
 const _: () = {
-    ["Size of android_app"][::std::mem::size_of::<android_app>() - 256usize];
+    ["Size of android_app"][::std::mem::size_of::<android_app>() - 264usize];
     ["Alignment of android_app"][::std::mem::align_of::<android_app>() - 8usize];
     ["Offset of field: android_app::userData"]
         [::std::mem::offset_of!(android_app, userData) - 0usize];
@@ -5193,6 +5198,8 @@ const _: () = {
         [::std::mem::offset_of!(android_app, inputAvailableWakeUp) - 252usize];
     ["Offset of field: android_app::inputSwapPending"]
         [::std::mem::offset_of!(android_app, inputSwapPending) - 253usize];
+    ["Offset of field: android_app::editorActionContext"]
+        [::std::mem::offset_of!(android_app, editorActionContext) - 256usize];
 };
 #[doc = " Looper data ID of commands coming from the app's main thread, which\n is returned as an identifier from ALooper_pollOnce().  The data for this\n identifier is a pointer to an android_poll_source structure.\n These can be retrieved and processed with android_app_read_cmd()\n and android_app_exec_cmd()."]
 pub const NativeAppGlueLooperId_LOOPER_ID_MAIN: NativeAppGlueLooperId = 1;
@@ -5291,4 +5298,33 @@ unsafe extern "C" {
 unsafe extern "C" {
     #[doc = " Determines if a looper wake up was due to new input becoming available"]
     pub fn android_app_input_available_wake_up(app: *mut android_app) -> bool;
+}
+
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct GameActivityImeEditorInfo {
+    pub inputType: i32,
+    pub actionId: i32,
+    pub imeOptions: i32,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of GameActivityImeEditorInfo"]
+        [::std::mem::size_of::<GameActivityImeEditorInfo>() - 12usize];
+    ["Alignment of GameActivityImeEditorInfo"]
+        [::std::mem::align_of::<GameActivityImeEditorInfo>() - 4usize];
+    ["Offset of field: GameActivityImeEditorInfo::inputType"]
+        [::std::mem::offset_of!(GameActivityImeEditorInfo, inputType) - 0usize];
+    ["Offset of field: GameActivityImeEditorInfo::actionId"]
+        [::std::mem::offset_of!(GameActivityImeEditorInfo, actionId) - 4usize];
+    ["Offset of field: GameActivityImeEditorInfo::imeOptions"]
+        [::std::mem::offset_of!(GameActivityImeEditorInfo, imeOptions) - 8usize];
+};
+unsafe extern "C" {
+    #[doc = " Installs the document and input hints as one update on the UI thread."]
+    pub fn GameActivity_setImeState(
+        activity: *mut GameActivity,
+        state: *const GameTextInputState,
+        info: *const GameActivityImeEditorInfo,
+    );
 }

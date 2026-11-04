@@ -248,20 +248,17 @@ impl GameActivityGlue {
             }
             unsafe {
                 if take {
-                    // XXX: The GameActivity implementation should be using
-                    // atomic ops to set this flag, and require us to use
-                    // atomics to check and clear it too.
-                    //
-                    // We currently just hope that with the lack of atomic ops that
-                    // the compiler isn't reordering code so this gets flagged
-                    // before the java main thread really updates the state.
-                    if (*app_ptr).textInputState == 0 {
+                    libc::pthread_mutex_lock(&mut (*app_ptr).mutex);
+                    let ready = (*app_ptr).textInputState != 0;
+                    (*app_ptr).textInputState = 0;
+                    libc::pthread_mutex_unlock(&mut (*app_ptr).mutex);
+                    if !ready {
                         return None;
                     }
-                    (*app_ptr).textInputState = 0;
                 }
                 let activity = (*app_ptr).activity;
                 let mut out_state = TextInputState {
+                    context_id: 0,
                     text: String::new(),
                     selection: TextSpan { start: 0, end: 0 },
                     compose_region: None,
@@ -275,16 +272,6 @@ impl GameActivityGlue {
                 // from Java so we need to be careful to convert text to and
                 // from UTF8
                 //
-                // GameTextInput also uses a pre-allocated, fixed-sized buffer for
-                // the current text state and has shared `currentState_` that
-                // appears to have no lock to guard access from multiple threads.
-                //
-                // There's also no locking at the GameActivity level, so I'm fairly
-                // certain that `GameActivity_getTextInputState` isn't thread
-                // safe: https://issuetracker.google.com/issues/294112477
-                //
-                // Overall this is all quite gnarly - and probably a good reminder
-                // of why we want to use Rust instead of C/C++.
                 ffi::GameActivity_getTextInputState(
                     activity,
                     Some(AndroidAppInner::map_input_state_to_text_event_callback),
@@ -326,7 +313,11 @@ impl GameActivityGlue {
     }
 
     // TODO: move into a trait
-    pub fn set_text_input_state(&self, state: TextInputState) {
+    pub fn set_text_input_state(
+        &self,
+        state: TextInputState,
+        info: Option<(InputType, TextInputAction, ImeOptions)>,
+    ) {
         self.with_locked_app(|app_ptr| {
             if app_ptr.is_null() {
                 log::error!("Attempted to set text input state after GameActivity was destroyed");
@@ -338,6 +329,7 @@ impl GameActivityGlue {
                 let text_length = modified_utf8.len() as i32;
                 let modified_utf8_bytes = modified_utf8.as_ptr();
                 let ffi_state = ffi::GameTextInputState {
+                    context_id: state.context_id,
                     text_UTF8: modified_utf8_bytes.cast(), // NB: may be signed or unsigned depending on target
                     text_length,
                     selection: ffi::GameTextInputSpan {
@@ -370,12 +362,21 @@ impl GameActivityGlue {
                         None => ffi::GameTextInputSpan { start: -1, end: -1 },
                     },
                 };
-                ffi::GameActivity_setTextInputState(activity, &ffi_state as *const _);
+                if let Some((input_type, action, options)) = info {
+                    let info = ffi::GameActivityImeEditorInfo {
+                        inputType: input_type.bits() as i32,
+                        actionId: action.into(),
+                        imeOptions: options.bits() as i32,
+                    };
+                    ffi::GameActivity_setImeState(activity, &ffi_state, &info);
+                } else {
+                    ffi::GameActivity_setTextInputState(activity, &ffi_state);
+                }
             }
         })
     }
 
-    pub fn take_pending_editor_action(&self) -> Option<i32> {
+    pub fn take_pending_editor_action(&self) -> Option<(i32, u64)> {
         self.with_locked_app(|app_ptr| {
             if app_ptr.is_null() {
                 log::error!(
@@ -384,12 +385,15 @@ impl GameActivityGlue {
                 return None;
             }
             unsafe {
-                if (*app_ptr).pendingEditorAction {
+                libc::pthread_mutex_lock(&mut (*app_ptr).mutex);
+                let action = if (*app_ptr).pendingEditorAction {
                     (*app_ptr).pendingEditorAction = false;
-                    Some((*app_ptr).editorAction)
+                    Some(((*app_ptr).editorAction, (*app_ptr).editorActionContext))
                 } else {
                     None
-                }
+                };
+                libc::pthread_mutex_unlock(&mut (*app_ptr).mutex);
+                action
             }
         })
     }
@@ -718,6 +722,7 @@ impl AndroidAppInner {
         match simd_cesu8::mutf8::decode(text_modified_utf8) {
             Ok(str) => {
                 let len = str.len();
+                (*out_ptr).context_id = (*state).context_id;
                 (*out_ptr).text = String::from(str);
 
                 let selection_start = (*state).selection.start.clamp(0, len as i32 + 1);
@@ -749,7 +754,18 @@ impl AndroidAppInner {
 
     // TODO: move into a trait
     pub fn set_text_input_state(&self, state: TextInputState) {
-        self.game_activity.set_text_input_state(state);
+        self.game_activity.set_text_input_state(state, None);
+    }
+
+    pub fn set_ime_state(
+        &self,
+        state: TextInputState,
+        input_type: InputType,
+        action: TextInputAction,
+        options: ImeOptions,
+    ) {
+        self.game_activity
+            .set_text_input_state(state, Some((input_type, action, options)));
     }
 
     pub fn set_ime_editor_info(
@@ -1093,8 +1109,11 @@ impl InputIteratorInner<'_> {
 
         if !self.ime_editor_action_checked {
             self.ime_editor_action_checked = true;
-            if let Some(action) = self.game_activity.take_pending_editor_action() {
-                let _ = callback(&InputEvent::TextAction(TextInputAction::from(action)));
+            if let Some((action, context)) = self.game_activity.take_pending_editor_action() {
+                let _ = callback(&InputEvent::TextAction(
+                    TextInputAction::from(action),
+                    context,
+                ));
                 return true;
             }
         }

@@ -1094,6 +1094,21 @@ impl AndroidApp {
         self.inner.read().unwrap().set_text_input_state(state);
     }
 
+    /// Installs a document and its keyboard hints together on the UI thread.
+    #[cfg(feature = "game-activity")]
+    pub fn set_ime_state(
+        &self,
+        state: input::TextInputState,
+        input_type: input::InputType,
+        action: input::TextInputAction,
+        options: input::ImeOptions,
+    ) {
+        self.inner
+            .read()
+            .unwrap()
+            .set_ime_state(state, input_type, action, options);
+    }
+
     /// Specify the type of text being input, how the IME enter/action key
     /// should behave and any additional IME options.
     ///

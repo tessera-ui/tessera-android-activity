@@ -890,6 +890,8 @@ pub struct TextSpan {
 
 #[derive(Debug, Clone)]
 pub struct TextInputState {
+    /// Identifies the editor that owns the text and its subsequent IME events.
+    pub context_id: u64,
     pub text: String,
 
     /// A selection defined on the text.
@@ -912,6 +914,7 @@ pub struct TextInputState {
 impl Default for TextInputState {
     fn default() -> Self {
         Self {
+            context_id: 0,
             text: String::new(),
             selection: TextSpan { start: 0, end: 0 },
             compose_region: None,

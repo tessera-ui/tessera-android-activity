@@ -566,6 +566,18 @@ void GameActivity_restartInput(GameActivity* activity);
  */
 void GameActivity_setTextInputState(GameActivity* activity, const GameTextInputState* state);
 
+/** Input hints installed together with an editable document. */
+typedef struct GameActivityImeEditorInfo {
+    int32_t inputType;
+    int32_t actionId;
+    int32_t imeOptions;
+} GameActivityImeEditorInfo;
+
+/** Installs the document and input hints as one update on the UI thread. */
+void GameActivity_setImeState(GameActivity* activity, const GameTextInputState* state,
+                             const GameActivityImeEditorInfo* info);
+
+
 /**
  * Get the last-received text entry state (see documentation of the
  * GameTextInputState struct in the Game Text Input library reference).

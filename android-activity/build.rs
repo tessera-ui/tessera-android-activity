@@ -25,6 +25,8 @@ fn build_glue_for_game_activity() {
         println!("cargo:rerun-if-changed={}", activity_path("include", f));
     }
 
+    println!("cargo:rerun-if-changed=android-games-sdk/src/common/text_input_state.h");
+
     cc::Build::new()
         .cpp(true)
         .include("android-games-sdk/src/common")
@@ -62,6 +64,7 @@ fn build_glue_for_game_activity() {
         .include("android-games-sdk/src/common")
         .include("android-games-sdk/include")
         .include("android-games-sdk/game-text-input/prefab-src/modules/game-text-input/include")
+        .include("android-games-sdk/src/common")
         .file(textinput_path("src", "gametextinput.cpp"))
         .cpp_link_stdlib("c++_static")
         .compile("libgame_text_input.a");

@@ -714,6 +714,10 @@ static void onSoftwareKeyboardVisibilityChanged(GameActivity* activity, bool vis
     pthread_mutex_unlock(&android_app->mutex);
 }
 
+static void readInputContext(void* context, const GameTextInputState* state) {
+    *(uint64_t*)context = state->context_id;
+}
+
 static bool onEditorAction(GameActivity* activity, int action) {
     LOGV("EditorAction: %p -- %d", activity, action);
 
@@ -729,6 +733,7 @@ static bool onEditorAction(GameActivity* activity, int action) {
              "handled",
              action, android_app->editorAction);
     }
+    GameActivity_getTextInputState(activity, readInputContext, &android_app->editorActionContext);
     android_app->editorAction = action;
     android_app->pendingEditorAction = true;
     notifyInput(android_app);
