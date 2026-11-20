@@ -128,6 +128,10 @@ void android_app_pre_exec_cmd(struct android_app* android_app, int8_t cmd) {
             LOGV("APP_CMD_CONFIG_CHANGED");
             AConfiguration_fromAssetManager(android_app->config,
                                             android_app->activity->assetManager);
+            // The retained AssetManager can still describe the old display. GameActivity
+            // has already read the density from the configuration passed to the Activity.
+            int32_t density = GameActivity_getDensityDpi(android_app->activity);
+            if (density > 0) AConfiguration_setDensity(android_app->config, density);
             print_cur_config(android_app);
             break;
 
